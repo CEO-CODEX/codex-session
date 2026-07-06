@@ -1,0 +1,441 @@
+const { kordid } = require("../lib/id");
+const express = require("express");
+const fs = require("fs");
+const path = require("path");
+const os = require("os");
+const pino = require("pino");
+const QRCode = require("qrcode");
+const {
+  default: makeWASocket,
+  useMultiFileAuthState,
+  delay,
+  fetchLatestBaileysVersion,
+} = require("baileys");
+const NodeCache = require("node-cache");
+
+const msgCache = new NodeCache();
+const sessCache = new NodeCache({ stdTTL: 600 });
+const sessions = new Map();
+
+function getTempDir() {
+  const tmp = process.env.VERCEL_TMP;
+  return tmp && fs.existsSync(tmp) ? tmp : os.tmpdir();
+}
+
+function createSessDir(sessId) {
+  const base = getTempDir();
+  const dir = path.join(base, `kordai_${sessId}`);
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  return dir;
+}
+
+async function cleanup(sessId) {
+  try {
+    const dir = path.join(getTempDir(), `kordai_${sessId}`);
+    if (fs.existsSync(dir)) {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+
+    const sock = sessions.get(sessId);
+    if (sock?.ev) {
+      try {
+        sock.ev.removeAllListeners();
+      } catch (listenerError) {
+        console.warn(
+          `Listener cleanup warning for ${sessId}:`,
+          listenerError?.message || listenerError,
+        );
+      }
+    }
+    if (sock?.ws && sock.ws.readyState === 1) {
+      try {
+        sock.ws.close();
+      } catch (wsError) {
+        console.warn(
+          `Socket close warning for ${sessId}:`,
+          wsError?.message || wsError,
+        );
+      }
+    }
+
+    sessions.delete(sessId);
+    sessCache.del(sessId);
+  } catch (error) {
+    console.error(`Session cleanup error for ${sessId}:`, error);
+  }
+}
+
+function sanitizeKey(key) {
+  return key.replace(/[.#$\/\[\]]/g, "_");
+}
+
+function extractObjectId(payload) {
+  return (
+    payload?.storage?.name ||
+    payload?.uploadResult?.name ||
+    payload?.uploadResult?.objectId ||
+    null
+  );
+}
+
+async function collectSessionFiles(dir) {
+  const files = {};
+  const items = await fs.promises.readdir(dir);
+
+  for (const item of items) {
+    const filePath = path.join(dir, item);
+    const stat = await fs.promises.stat(filePath);
+
+    if (stat.isFile() && item.endsWith(".json")) {
+      const content = await fs.promises.readFile(filePath, "utf8");
+      try {
+        const sanitizedKey = sanitizeKey(item);
+        files[sanitizedKey] = {
+          originalName: item,
+          content: JSON.parse(content),
+        };
+      } catch (_parseError) {
+        console.warn(`Skipping invalid JSON file: ${item}`);
+      }
+    }
+  }
+
+  if (Object.keys(files).length === 0) {
+    throw new Error("No valid JSON files found in directory");
+  }
+
+  return files;
+}
+
+async function persistDir(sessionStore, dir, directoryId) {
+  try {
+    const files = await collectSessionFiles(dir);
+    const payload = {
+      directoryId,
+      savedAt: new Date().toISOString(),
+      files,
+    };
+
+    const saved = await sessionStore.saveSession(directoryId, payload);
+
+    return {
+      directoryId,
+      objectId: extractObjectId(saved),
+      storage: saved?.storage || null,
+      uploadResult: saved?.uploadResult || null,
+    };
+  } catch (error) {
+    console.error("Directory upload error:", error);
+    throw new Error(`Directory upload failed: ${error.message}`);
+  }
+}
+
+async function fetchDir(sessionStore, dirId) {
+  try {
+    const data = await sessionStore.getSession(dirId);
+
+    let presignedUrl = null;
+    try {
+      presignedUrl = await sessionStore.getPresignedUrl(dirId, 3600);
+    } catch (urlError) {
+      console.warn("Presigned URL generation skipped:", urlError.message);
+    }
+
+    return {
+      directoryId: dirId,
+      objectId: data?.storage?.name || null,
+      url: presignedUrl,
+      fileName: data?.storage?.name || `session-${dirId}.json`,
+      data: data?.data || null,
+      storage: data?.storage || null,
+    };
+  } catch (error) {
+    console.error("Directory fetch error:", error);
+    throw new Error(`Directory fetch failed: ${error.message}`);
+  }
+}
+
+async function initWA(sessId, useQR = false) {
+  const dir = createSessDir(sessId);
+  const { state, saveCreds } = await useMultiFileAuthState(dir);
+  const { version, isLatest } = await fetchLatestBaileysVersion();
+  console.log(`Using WA v${version.join(".")}, isLatest: ${isLatest}`);
+
+  const sock = makeWASocket({
+    auth: state,
+    printQRInTerminal: useQR,
+    version,
+    logger: pino({ level: "fatal" }).child({ level: "fatal" }),
+    msgRetryCounterCache: msgCache,
+  });
+
+  sock.ev.on("creds.update", async (creds) => {
+    try {
+      await saveCreds(creds);
+    } catch (error) {
+      // The session dir may already be gone (e.g. cleaned up after a
+      // failed upload or a closed connection). Baileys emits this event
+      // without awaiting listeners, so an unhandled rejection here would
+      // crash the whole process.
+      console.warn(`saveCreds failed for ${sessId}:`, error?.message || error);
+    }
+  });
+  return { sock, dir };
+}
+
+async function animateText(sock, text) {
+  let currentText = "";
+  const sentMessage = await sock.sendMessage(sock.user.id, {
+    text: currentText,
+  });
+
+  for (let i = 0; i < text.length; i++) {
+    currentText += text[i];
+    await sock.sendMessage(sock.user.id, {
+      text: currentText,
+      edit: sentMessage.key,
+    });
+    await delay(200);
+  }
+
+  await delay(500);
+
+  for (let i = 0; i < text.length; i++) {
+    currentText = text.substring(0, i);
+    await sock.sendMessage(sock.user.id, {
+      text: currentText,
+      edit: sentMessage.key,
+    });
+    await delay(150);
+  }
+
+  await delay(300);
+
+  currentText = "";
+  for (let i = 0; i < text.length; i++) {
+    currentText += text[i];
+    await sock.sendMessage(sock.user.id, {
+      text: currentText,
+      edit: sentMessage.key,
+    });
+    await delay(180);
+  }
+
+  await delay(800);
+  await sock.sendMessage(sock.user.id, { text: "done", edit: sentMessage.key });
+  await delay(500);
+
+  return sentMessage;
+}
+
+function createWhatsappRoutes({ sessionStore }) {
+  if (!sessionStore) {
+    throw new Error("sessionStore is required for whatsapp routes");
+  }
+
+  const router = express.Router();
+
+  async function handleConn(sock, dir, sessId, res = null) {
+    try {
+      await delay(10000);
+      await animateText(sock, "syncin..");
+
+      const result = await persistDir(sessionStore, dir, sessId);
+      const botId = `session-${result.directoryId}`;
+      sessCache.set(sessId, {
+        id: result.directoryId,
+        objectId: result.objectId,
+        uploadedAt: new Date().toISOString(),
+      });
+
+      const sess = await sock.sendMessage(sock.user.id, { text: botId });
+      const msg = `connected succefully to codex!!\nSession ID: ${botId}`;
+      const content = {
+        text: msg,
+        contextInfo: {
+          forwardingScore: 999,
+          isForwarded: true,
+          mentionedJid: [sock.user.id],
+          forwardedNewsletterMessageInfo: {
+            newsletterName: "Name",
+            newsletterJid: "xxxxxxxxxx@newsletter",
+          },
+        },
+      };
+
+      await sock.sendMessage(sock.user.id, content, { quoted: sess });
+      if (res && !res.headersSent) {
+        res.json({
+          success: true,
+          id: result.directoryId,
+          sessionId: sessId,
+          objectId: result.objectId || null,
+        });
+      }
+
+      await delay(6000);
+      await cleanup(sessId);
+      return result.directoryId;
+    } catch (error) {
+      console.error("Connection handling error:", error);
+      if (res && !res.headersSent) {
+        res.status(500).json({
+          success: false,
+          error: error.message,
+        });
+      }
+      await cleanup(sessId);
+    }
+  }
+
+  async function handlePair(sessId, phone, res) {
+    const { sock, dir } = await initWA(sessId);
+    sessions.set(sessId, sock);
+
+    try {
+      if (!sock.authState.creds.registered) {
+        await delay(1500);
+        phone = phone.replace(/[^0-9]/g, "");
+        const code = await sock.requestPairingCode(phone);
+        if (!res.headersSent) {
+          res.json({ code, sessionId: sessId, id: sessId });
+        }
+      }
+
+      sock.ev.on("connection.update", async (update) => {
+        const { connection, lastDisconnect } = update;
+        if (connection === "open") {
+          await handleConn(sock, dir, sessId, res);
+        } else if (
+          connection === "close" &&
+          lastDisconnect?.error?.output?.statusCode !== 401
+        ) {
+          await delay(10000);
+          await handlePair(sessId, phone, res);
+        }
+      });
+    } catch (error) {
+      console.error("Pairing service error:", error);
+      await cleanup(sessId);
+      if (!res.headersSent) {
+        res.json({ code: "Service is Currently Unavailable" });
+      }
+    }
+  }
+
+  async function handleQR(sessId, res) {
+    const { sock, dir } = await initWA(sessId, true);
+    sessions.set(sessId, sock);
+
+    let qrGenerated = false;
+
+    try {
+      sock.ev.on("connection.update", async (update) => {
+        const { connection, lastDisconnect, qr } = update;
+
+        if (qr && !qrGenerated) {
+          qrGenerated = true;
+          try {
+            const qrImage = await QRCode.toDataURL(qr);
+            if (!res.headersSent) {
+              res.json({
+                qr: qrImage,
+                sessionId: sessId,
+                id: sessId,
+                message: "Scan the QR code with WhatsApp",
+              });
+            }
+          } catch (qrError) {
+            console.error("QR generation error:", qrError);
+            if (!res.headersSent) {
+              res.status(500).json({ error: "Failed to generate QR code" });
+            }
+          }
+        }
+
+        if (connection === "open") {
+          await handleConn(sock, dir, sessId, res);
+        } else if (
+          connection === "close" &&
+          lastDisconnect?.error?.output?.statusCode !== 401
+        ) {
+          await delay(10000);
+          await handleQR(sessId, res);
+        }
+      });
+
+      setTimeout(() => {
+        if (!qrGenerated && !res.headersSent) {
+          res.status(408).json({ error: "QR code generation timeout" });
+          cleanup(sessId);
+        }
+      }, 30000);
+    } catch (error) {
+      console.error("QR service error:", error);
+      await cleanup(sessId);
+      if (!res.headersSent) {
+        res.status(500).json({ error: "QR service is currently unavailable" });
+      }
+    }
+  }
+
+  router.get("/", async (req, res) => {
+    const sessId = kordid(16, "cdx-");
+    let phone = req.query.number;
+
+    if (!phone || !/^\d+$/.test(phone.replace(/[^0-9]/g, ""))) {
+      return res.status(400).json({ error: "Invalid phone number" });
+    }
+
+    const timeout = setTimeout(() => cleanup(sessId), 600000);
+
+    try {
+      await handlePair(sessId, phone, res);
+    } catch (error) {
+      console.error("Pairing process error:", error);
+      clearTimeout(timeout);
+      await cleanup(sessId);
+      if (!res.headersSent) {
+        res.status(500).json({ error: "Pairing process failed" });
+      }
+    }
+  });
+
+  router.get("/qr", async (req, res) => {
+    const sessId = kordid(16, "cdx-");
+    const timeout = setTimeout(() => cleanup(sessId), 600000);
+
+    try {
+      await handleQR(sessId, res);
+    } catch (error) {
+      console.error("QR process error:", error);
+      clearTimeout(timeout);
+      await cleanup(sessId);
+      if (!res.headersSent) {
+        res.status(500).json({ error: "QR process failed" });
+      }
+    }
+  });
+
+  router.get("/fetch-example/:dirId", async (req, res) => {
+    try {
+      const dirId = req.params.dirId;
+      const data = await fetchDir(sessionStore, dirId);
+
+      res.json({
+        success: true,
+        message: "Directory fetched successfully",
+        data,
+      });
+    } catch (error) {
+      res.status(500).json({
+        success: false,
+        error: error.message,
+      });
+    }
+  });
+
+  return router;
+}
+
+module.exports = createWhatsappRoutes;

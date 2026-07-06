@@ -1,0 +1,33 @@
+{
+  "name": "spark-session-store-api",
+  "version": "1.0.0",
+  "description": "Express API for storing/fetching JSON sessions via a MinIO (S3-compatible) backend",
+  "main": "src/server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon src/server.js"
+  },
+  "keywords": [
+    "express",
+    "sparkdb",
+    "session-store",
+    "files-api"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^1.7.2",
+    "baileys": "^6.7.9",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "form-data": "^4.0.0",
+    "fs-extra": "^11.2.0",
+    "minio": "^8.0.1",
+    "node-cache": "^5.1.2",
+    "pino": "^9.3.2",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  }
+}
