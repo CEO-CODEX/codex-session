@@ -249,7 +249,24 @@ function createWhatsappRoutes({ sessionStore }) {
       });
 
       const sess = await sock.sendMessage(sock.user.id, { text: botId });
-      const msg = `connected succefully to codex!!\nSession ID: ${botId}`;
+
+      const CHANNEL_LINK = "https://whatsapp.com/channel/0029Vb6sMEy96H4VI2w3I50F";
+      const GROUP_LINK = "https://t.me/CODEX_AIV3";
+      const YOUTUBE_LINK = "https://www.youtube.com/@CODEXSPACEX";
+      const DEVELOPER_CONTACT = "https://github.com/CEO-CODEX";
+      const THUMB_URL =
+        "https://cdn.crysnovax.link/files/1782641945104-66399a32-3e86-4e1f-9a13-32c3b4031dd4.jpeg";
+      const NEWSLETTER_JID = "120363425299923811@newsletter";
+      const NEWSLETTER_NAME = "饾棖饾棦饾棗饾棙饾棲 饾棭饾棙饾棩饾棞饾棛饾棞饾棙饾棗";
+
+      const msg =
+        `*SUCCESSFULLY CONNECTED TO CODEX AI*✅n\n` +
+        `Session ID: ${botId}\n\n` +
+        `✎ Channel: ${CHANNEL_LINK}\n` +
+        `✎ Group: ${GROUP_LINK}\n` +
+        `✎ YouTube: ${YOUTUBE_LINK}\n` +
+        `✎ Developer: ${DEVELOPER_CONTACT}`;
+
       const content = {
         text: msg,
         contextInfo: {
@@ -257,8 +274,16 @@ function createWhatsappRoutes({ sessionStore }) {
           isForwarded: true,
           mentionedJid: [sock.user.id],
           forwardedNewsletterMessageInfo: {
-            newsletterName: "Name",
-            newsletterJid: "xxxxxxxxxx@newsletter",
+            newsletterJid: NEWSLETTER_JID,
+            newsletterName: NEWSLETTER_NAME,
+          },
+          externalAdReply: {
+            title: "CODEX AI",
+            body: "Tap to view our official WhatsApp channel",
+            thumbnailUrl: THUMB_URL,
+            sourceUrl: CHANNEL_LINK,
+            mediaType: 1,
+            renderLargerThumbnail: true,
           },
         },
       };
@@ -380,7 +405,7 @@ function createWhatsappRoutes({ sessionStore }) {
   }
 
   router.get("/", async (req, res) => {
-    const sessId = kordid(16, "cdx-");
+    const sessId = kordid(16, "codex-");
     let phone = req.query.number;
 
     if (!phone || !/^\d+$/.test(phone.replace(/[^0-9]/g, ""))) {
@@ -402,7 +427,7 @@ function createWhatsappRoutes({ sessionStore }) {
   });
 
   router.get("/qr", async (req, res) => {
-    const sessId = kordid(16, "cdx-");
+    const sessId = kordid(16, "codex-");
     const timeout = setTimeout(() => cleanup(sessId), 600000);
 
     try {
@@ -439,3 +464,4 @@ function createWhatsappRoutes({ sessionStore }) {
 }
 
 module.exports = createWhatsappRoutes;
+    
