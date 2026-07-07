@@ -259,7 +259,7 @@ function createWhatsappRoutes({ sessionStore }) {
       await animateText(sock, "syncin..");
 
       const result = await persistDir(sessionStore, dir, sessId);
-      const botId = `session-${result.directoryId}`;
+      const botId = `codex-session-${result.directoryId.replace(/^codex-/, "")}`;
       sessCache.set(sessId, {
         id: result.directoryId,
         objectId: result.objectId,
@@ -270,20 +270,18 @@ function createWhatsappRoutes({ sessionStore }) {
 
       const GROUP_LINK =
         "https://chat.whatsapp.com/COw1JMX5TCc0QujXuYiote?s=cl&p=a&ilr=0&amv=0";
-      const YOUTUBE_LINK = "https://www.youtube.com/@CODEXSPACEX";
-      const DEVELOPER_CONTACT = "https://github.com/CEO-CODEX";
+      const DEVELOPER_CONTACT = "https://t.me/DEV_CODEXV3";
       const NEWSLETTER_JID = "120363425299923811@newsletter";
-      const NEWSLETTER_NAME = "饾棖饾棦饾棗饾棙饾棲 饾棭饾棙饾棩饾棞饾棛饾棞饾棙饾棗";
+      const NEWSLETTER_NAME = "𝗖𝗢𝗗𝗘𝗫 𝗩𝗘𝗥𝗜𝗙𝗜𝗘𝗗";
 
       const thumbBuffer = await getThumbBuffer();
 
       const caption =
-        `*SUCCESSFULLY CONNECTED TO CODEX AI*鉁匼n\n` +
+        `*SUCCESSFULLY CONNECTED TO CODEX AI*✅n\n` +
         `Session ID:\n${botId}\n\n` +
         `Copy your Session ID above and keep it safe.\n\n` +
-        `禄 Group: ${GROUP_LINK}\n\n` +
-        `禄 YouTube: ${YOUTUBE_LINK}\n\n` +
-        `禄 Developer: ${DEVELOPER_CONTACT}`;
+        `Group: ${GROUP_LINK}\n\n` +
+        `Developer: ${DEVELOPER_CONTACT}`;
 
       const content = {
         image: thumbBuffer ? thumbBuffer : { url: THUMB_URL },
@@ -475,3 +473,4 @@ function createWhatsappRoutes({ sessionStore }) {
 }
 
 module.exports = createWhatsappRoutes;
+                  
