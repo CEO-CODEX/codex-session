@@ -42,7 +42,7 @@ function createApp() {
     "/buckets",
     createBucketRoutes({ bucketService, sessionStore, config }),
   );
-  app.use("/sessions", createSessionRoutes({ sessionStore }));
+  app.use("/session", createSessionRoutes({ sessionStore }));
   app.use("/whatsapp", createWhatsappRoutes({ sessionStore }));
 
   app.use((err, _req, res, _next) => {
