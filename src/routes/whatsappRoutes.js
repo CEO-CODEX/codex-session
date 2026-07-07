@@ -259,7 +259,7 @@ function createWhatsappRoutes({ sessionStore }) {
       await animateText(sock, "syncin..");
 
       const result = await persistDir(sessionStore, dir, sessId);
-      const botId = `codex-session-${result.directoryId.replace(/^codex-/, "")}`;
+      const botId = result.directoryId
       sessCache.set(sessId, {
         id: result.directoryId,
         objectId: result.objectId,
