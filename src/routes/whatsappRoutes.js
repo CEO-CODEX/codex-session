@@ -277,7 +277,7 @@ function createWhatsappRoutes({ sessionStore }) {
       const thumbBuffer = await getThumbBuffer();
 
       const caption =
-        `*SUCCESSFULLY CONNECTED TO CODEX AI*✅\n` +
+        `*SUCCESSFULLY CONNECTED TO CODEX AI* ✅\n` +
         `Session ID:\n${botId}\n\n` +
         `Copy your Session ID above and keep it safe.\n\n` +
         `Group: ${GROUP_LINK}\n\n` +
