@@ -5,6 +5,7 @@ const path = require("path");
 const os = require("os");
 const pino = require("pino");
 const QRCode = require("qrcode");
+const axios = require("axios");
 const {
   default: makeWASocket,
   useMultiFileAuthState,
@@ -13,9 +14,26 @@ const {
 } = require("baileys");
 const NodeCache = require("node-cache");
 
+
 const msgCache = new NodeCache();
 const sessCache = new NodeCache({ stdTTL: 600 });
 const sessions = new Map();
+
+const THUMB_URL =
+  "https://cdn.crysnovax.link/files/1782641945104-66399a32-3e86-4e1f-9a13-32c3b4031dd4.jpeg";
+let cachedThumbBuffer = null;
+
+async function getThumbBuffer() {
+  if (cachedThumbBuffer) return cachedThumbBuffer;
+  try {
+    const res = await axios.get(THUMB_URL, { responseType: "arraybuffer" });
+    cachedThumbBuffer = Buffer.from(res.data);
+  } catch (error) {
+    console.warn("Thumbnail fetch failed, view-channel card will render without it:", error.message);
+    cachedThumbBuffer = null;
+  }
+  return cachedThumbBuffer;
+}
 
 function getTempDir() {
   const tmp = process.env.VERCEL_TMP;
@@ -250,25 +268,26 @@ function createWhatsappRoutes({ sessionStore }) {
 
       const sess = await sock.sendMessage(sock.user.id, { text: botId });
 
-      const CHANNEL_LINK = "https://whatsapp.com/channel/0029Vb6sMEy96H4VI2w3I50F";
-      const GROUP_LINK = "https://t.me/CODEX_AIV3";
+      const GROUP_LINK =
+        "https://chat.whatsapp.com/COw1JMX5TCc0QujXuYiote?s=cl&p=a&ilr=0&amv=0";
       const YOUTUBE_LINK = "https://www.youtube.com/@CODEXSPACEX";
       const DEVELOPER_CONTACT = "https://github.com/CEO-CODEX";
-      const THUMB_URL =
-        "https://cdn.crysnovax.link/files/1782641945104-66399a32-3e86-4e1f-9a13-32c3b4031dd4.jpeg";
       const NEWSLETTER_JID = "120363425299923811@newsletter";
       const NEWSLETTER_NAME = "饾棖饾棦饾棗饾棙饾棲 饾棭饾棙饾棩饾棞饾棛饾棞饾棙饾棗";
 
-      const msg =
-        `*SUCCESSFULLY CONNECTED TO CODEX AI*✅n\n` +
-        `Session ID: ${botId}\n\n` +
-        `✎ Channel: ${CHANNEL_LINK}\n` +
-        `✎ Group: ${GROUP_LINK}\n` +
-        `✎ YouTube: ${YOUTUBE_LINK}\n` +
-        `✎ Developer: ${DEVELOPER_CONTACT}`;
+      const thumbBuffer = await getThumbBuffer();
+
+      const caption =
+        `*SUCCESSFULLY CONNECTED TO CODEX AI*鉁匼n\n` +
+        `Session ID:\n${botId}\n\n` +
+        `Copy your Session ID above and keep it safe.\n\n` +
+        `禄 Group: ${GROUP_LINK}\n\n` +
+        `禄 YouTube: ${YOUTUBE_LINK}\n\n` +
+        `禄 Developer: ${DEVELOPER_CONTACT}`;
 
       const content = {
-        text: msg,
+        image: thumbBuffer ? thumbBuffer : { url: THUMB_URL },
+        caption,
         contextInfo: {
           forwardingScore: 999,
           isForwarded: true,
@@ -276,14 +295,6 @@ function createWhatsappRoutes({ sessionStore }) {
           forwardedNewsletterMessageInfo: {
             newsletterJid: NEWSLETTER_JID,
             newsletterName: NEWSLETTER_NAME,
-          },
-          externalAdReply: {
-            title: "CODEX AI",
-            body: "Tap to view our official WhatsApp channel",
-            thumbnailUrl: THUMB_URL,
-            sourceUrl: CHANNEL_LINK,
-            mediaType: 1,
-            renderLargerThumbnail: true,
           },
         },
       };
@@ -464,4 +475,3 @@ function createWhatsappRoutes({ sessionStore }) {
 }
 
 module.exports = createWhatsappRoutes;
-    
