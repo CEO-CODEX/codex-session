@@ -2,4 +2,3 @@ node_modules/
 .env
 data/session-index.json
 npm-debug.log*
-sample.png
