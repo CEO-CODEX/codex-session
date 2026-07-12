@@ -769,8 +769,24 @@
           });
         }
 
-        sampleImage = new Image();
-        sampleImage.src = '/sample.png';
+      sampleImage = new Image();
+
+// Define your two hosted asset links here
+const primaryUrl = 'https://i.ibb.co/wh2jGmvm/sample.png'; // ImgBB
+const backupUrl = 'https://i.postimg.cc/BnYL7JMb/sample.png';    // Replace with your actual Postimages Direct Link
+
+// Set up the automatic safety fallback
+sampleImage.onerror = function() {
+    // If the image fails to load and isn't already using the backup, switch links
+    if (this.src !== backupUrl) {
+        console.warn("Primary image host down. Switching to backup server...");
+        this.src = backupUrl;
+    }
+};
+
+// Start the network request by loading the primary image first
+sampleImage.src = primaryUrl;
+
       }
 
       function drawBackdrop(time) {
